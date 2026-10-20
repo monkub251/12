@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test · lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff
+
+      - name: lint
+        run: ruff check core ui tests main.py
+
+      - name: test
+        run: python -m pytest tests -q
+
+  build:
+    name: build exe
+    runs-on: windows-latest
+    needs: test
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: build
+        run: python -m PyInstaller BANNARAKX.spec --noconfirm
+
+      - name: smoke check
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist\BANNARAKX.exe)) { throw "exe not produced" }
+          $mb = [math]::Round((Get-Item dist\BANNARAKX.exe).Length / 1MB, 1)
+          Write-Host "dist\BANNARAKX.exe  $mb MB"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BANNARAKX-exe
+          path: dist/BANNARAKX.exe
+          if-no-files-found: error
